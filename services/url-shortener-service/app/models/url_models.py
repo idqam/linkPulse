@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import Boolean, CheckConstraint, Integer, String, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from db.base import Base  
+from app.db.base import Base  
 
 class User(Base):
     __tablename__ = "users"

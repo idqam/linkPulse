@@ -4,7 +4,7 @@ from typing import Generator
 
 from core.settings import settings
 
-DATABASE_URL = settings.DATA_BASE_URL
+DATABASE_URL = settings.DATABASE_URL
 
 engine = create_engine(
     DATABASE_URL,
