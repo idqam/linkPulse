@@ -1,7 +1,6 @@
 from sqlalchemy.orm import Session
 
-
-from url_models import ShortUrl 
+from app.models.url_models import ShortUrl 
 
 class ShortUrlRepository:
     def __init__(self, db: Session):

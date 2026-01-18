@@ -2,9 +2,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from typing import Generator
 
-from core.settings import settings
+from app.core.settings import settings
 
+# Convert async URL to sync if needed
 DATABASE_URL = settings.DATABASE_URL
+if DATABASE_URL.startswith("postgresql+asyncpg://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
 
 engine = create_engine(
     DATABASE_URL,

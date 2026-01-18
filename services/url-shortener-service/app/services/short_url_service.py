@@ -3,9 +3,9 @@ from typing import Optional
 
 from pydantic import HttpUrl
 
-from short_url_repo import ShortUrlRepository
-from url_models import ShortUrl
-from short_url_service_utils import prepare_url, generate_short_code
+from app.repositories.short_url_repo import ShortUrlRepository
+from app.models.url_models import ShortUrl
+from app.utils.short_url_service_utils import prepare_url, generate_short_code
 
 
 class ShortUrlService:
@@ -26,7 +26,7 @@ class ShortUrlService:
 
         short_url = ShortUrl(
             short_code=short_code,
-            original_url=original_url,
+            original_url=str(original_url),
             normalized_url=normalized,
             expires_at=expires_at,
             redirect_type=redirect_type,
