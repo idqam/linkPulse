@@ -12,14 +12,47 @@ from app.db.session import get_db
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/short-urls", tags=["short-urls"])
 
+def _build_short_url_response(short_url: ShortUrl) -> ShortURLCreateResponse:
+    domain = str(settings.SHORT_URL_DOMAIN or 'http://localhost:8000').rstrip('/')
+    return ShortURLCreateResponse(
+        short_url=f"{domain}/{short_url.short_code}",
+        short_code=short_url.short_code,
+        original_url=short_url.original_url,
+        created_at=short_url.created_at,
+        expires_at=short_url.expires_at,
+        redirect_type=short_url.redirect_type,
+        active=not short_url.is_expired(),
+        click_count=short_url.click_count,
+    )
+
+
 @router.get(
-        "",
+        "/{short_code}",
         response_model=ShortURLCreateResponse,
         status_code=status.HTTP_200_OK,
 )
+def get_short_url(short_code: str, db: Session = Depends(get_db)):
+    repo = ShortUrlRepository(db)
+    service = ShortUrlService(repo)
+    
+    try: 
+        short_url = service.get_short_url_by_code(short_code)
+        if not short_url:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Short URL not found"
+            )
+            
+        return _build_short_url_response(short_url)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch short URL: {str(e)}",
+        )
 
-def get_short_url(payload: str, db: Session = Depends(get_db)):
-    pass
 
 @router.post(
     "",
@@ -53,12 +86,4 @@ def create_short_url(
             detail=f"Failed to create short URL: {str(e)}",
         )
 
-    return ShortURLCreateResponse(
-        short_url=f"{str(settings.SHORT_URL_DOMAIN or 'http://localhost:8000').rstrip('/')}/{short_url.short_code}",
-        short_code=short_url.short_code,
-        original_url=short_url.original_url,
-        created_at=short_url.created_at,
-        expires_at=short_url.expires_at,
-        redirect_type=short_url.redirect_type,
-        active=True,
-    )
+    return _build_short_url_response(short_url)

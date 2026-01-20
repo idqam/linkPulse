@@ -19,3 +19,4 @@ class ShortURLCreateResponse(BaseModel):
     expires_at: Optional[datetime]
     redirect_type: int
     active: bool
+    click_count: int

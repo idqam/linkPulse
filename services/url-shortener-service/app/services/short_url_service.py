@@ -39,3 +39,8 @@ class ShortUrlService:
             code = generate_short_code()
             if not self.repo.exists(code):
                 return code
+    def get_short_url_by_code(self, short_code: str) -> Optional[ShortUrl]:
+        return self.repo.get_by_code(short_code)
+
+    def record_visit(self, short_url: ShortUrl) -> None:
+        self.repo.increment_clicks(short_url)

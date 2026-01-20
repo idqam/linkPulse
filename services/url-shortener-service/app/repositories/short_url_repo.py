@@ -19,3 +19,11 @@ class ShortUrlRepository:
         self.db.commit()
         self.db.refresh(short_url)
         return short_url
+
+    def get_by_code(self, short_code: str) -> ShortUrl | None:
+        return self.db.query(ShortUrl).filter_by(short_code=short_code).first()
+
+    def increment_clicks(self, short_url: ShortUrl) -> None:
+        short_url.click_count += 1
+        self.db.commit()
+        self.db.refresh(short_url)
