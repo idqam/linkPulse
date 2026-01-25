@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional, Tuple, List
 import math
+import asyncio
 
 from pydantic import HttpUrl
 
@@ -9,6 +10,20 @@ from app.repositories.short_url_repo import ShortUrlRepository
 from app.models.url_models import ShortUrl, User
 from app.utils.short_url_service_utils import prepare_url, generate_short_code
 from app.api.v1.schema_dtos import ShortURLCacheModel
+from app.events.publisher import event_publisher
+from app.events.schemas import (
+    UrlCreatedEvent,
+    UrlUpdatedEvent,
+    UrlDeletedEvent,
+    UrlStatusChangedEvent,
+)
+from app.events.constants import (
+    EVENT_URL_CREATED,
+    EVENT_URL_UPDATED,
+    EVENT_URL_DELETED,
+    EVENT_URL_DISABLED,
+    EVENT_URL_ENABLED,
+)
 
 
 class ShortUrlService:
@@ -39,7 +54,18 @@ class ShortUrlService:
             user_id=user_id,
         )
 
-        return self.repo.create(short_url)
+        short_url = self.repo.create(short_url)
+
+        event = UrlCreatedEvent(
+            short_code=short_url.short_code,
+            original_url=short_url.original_url,
+            user_id=short_url.user_id,
+            timestamp=datetime.now(timezone.utc),
+        )
+       
+        asyncio.create_task(event_publisher.publish(EVENT_URL_CREATED, event))
+
+        return short_url
 
     def _generate_unique_code(self) -> str:
         while True:
@@ -108,24 +134,68 @@ class ShortUrlService:
         expires_at: Optional[datetime] = None,
         redirect_type: Optional[int] = None,
     ) -> ShortUrl:
-        return self.repo.update(
+        updated = self.repo.update(
             short_url=short_url,
             expires_at=expires_at,
             redirect_type=redirect_type,
         )
 
+        
+        changes = {}
+        if expires_at is not None:
+            changes["expires_at"] = expires_at.isoformat()
+        if redirect_type is not None:
+            changes["redirect_type"] = redirect_type
+
+        if changes and updated.user_id:
+            event = UrlUpdatedEvent(
+                short_code=updated.short_code,
+                user_id=updated.user_id,
+                changes=changes,
+                timestamp=datetime.now(timezone.utc),
+            )
+            import asyncio
+            asyncio.create_task(event_publisher.publish(EVENT_URL_UPDATED, event))
+
+        return updated
+
     async def invalidate_cache(self, short_code: str) -> None:
         r = self.redis.get_instance()
         await r.delete(short_code)
 
-    def disable_short_url(self, short_url: ShortUrl) -> None:
+    async def disable_short_url(self, short_url: ShortUrl) -> None:
         self.repo.soft_delete(short_url)
+        if short_url.user_id:
+            event = UrlStatusChangedEvent(
+                short_code=short_url.short_code,
+                user_id=short_url.user_id,
+                new_status="disabled",
+                timestamp=datetime.now(timezone.utc),
+            )
+            await event_publisher.publish(EVENT_URL_DISABLED, event)
 
-    def enable_short_url(self, short_url: ShortUrl) -> None:
+    async def enable_short_url(self, short_url: ShortUrl) -> None:
         self.repo.restore(short_url)
+        if short_url.user_id:
+            event = UrlStatusChangedEvent(
+                short_code=short_url.short_code,
+                user_id=short_url.user_id,
+                new_status="active",
+                timestamp=datetime.now(timezone.utc),
+            )
+            await event_publisher.publish(EVENT_URL_ENABLED, event)
 
-    def delete_short_url(self, short_url: ShortUrl) -> None:
+    async def delete_short_url(self, short_url: ShortUrl) -> None:
+        short_code = short_url.short_code
+        user_id = short_url.user_id
         self.repo.hard_delete(short_url)
+        if user_id:
+            event = UrlDeletedEvent(
+                short_code=short_code,
+                user_id=user_id,
+                timestamp=datetime.now(timezone.utc),
+            )
+            await event_publisher.publish(EVENT_URL_DELETED, event)
 
     def verify_ownership(self, short_url: ShortUrl, user: User) -> bool:
         if user.role == "admin":

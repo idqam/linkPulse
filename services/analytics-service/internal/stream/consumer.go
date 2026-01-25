@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -82,15 +84,50 @@ func (c *Consumer) consume(ctx context.Context) {
 	}
 }
 
+type UrlCreatedPayload struct {
+	ShortCode   string    `json:"short_code"`
+	OriginalURL string    `json:"original_url"`
+	UserID      *int64    `json:"user_id"`
+	Timestamp   time.Time `json:"timestamp"`
+}
+
+type UrlAccessedPayload struct {
+	ShortCode string    `json:"short_code"`
+	IPAddress string    `json:"ip_address"`
+	UserAgent string    `json:"user_agent"`
+	Referrer  string    `json:"referrer"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+type UrlUpdatedPayload struct {
+	ShortCode string                 `json:"short_code"`
+	UserID    int64                  `json:"user_id"`
+	Changes   map[string]interface{} `json:"changes"`
+	Timestamp time.Time              `json:"timestamp"`
+}
+
+type UrlDeletedPayload struct {
+	ShortCode string    `json:"short_code"`
+	UserID    int64     `json:"user_id"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+type UserRegisteredPayload struct {
+	UserID    int64     `json:"user_id"`
+	Email     string    `json:"email"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+type UserLoggedInPayload struct {
+	UserID    int64     `json:"user_id"`
+	IPAddress string    `json:"ip_address"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
 func (c *Consumer) processMessage(ctx context.Context, msg redis.XMessage) {
 	eventType, ok := msg.Values["type"].(string)
 	if !ok {
 		c.log.Warn().Str("id", msg.ID).Msg("Message missing type field")
-		c.ack(ctx, msg.ID)
-		return
-	}
-
-	if eventType != "url.accessed" {
 		c.ack(ctx, msg.ID)
 		return
 	}
@@ -102,64 +139,158 @@ func (c *Consumer) processMessage(ctx context.Context, msg redis.XMessage) {
 		return
 	}
 
-	var payload map[string]interface{}
-	if err := json.Unmarshal([]byte(payloadStr), &payload); err != nil {
-		c.log.Error().Err(err).Str("id", msg.ID).Msg("Failed to parse payload")
+	var err error
+	switch eventType {
+	case "url.accessed":
+		err = c.handleUrlAccessed(ctx, payloadStr)
+	case "user.registered", "user.logged_in", "url.created", "url.updated", "url.deleted":
+		err = c.handleSystemEvent(ctx, eventType, payloadStr)
+	default:
+		c.log.Debug().Str("type", eventType).Msg("Ignoring unknown event type")
+	}
+
+	if err != nil {
+		c.log.Error().Err(err).Str("type", eventType).Msg("Failed to process event")
 		c.ack(ctx, msg.ID)
 		return
+	}
+
+	c.ack(ctx, msg.ID)
+}
+
+func (c *Consumer) handleUrlAccessed(ctx context.Context, payloadStr string) error {
+	var payload UrlAccessedPayload
+	if err := json.Unmarshal([]byte(payloadStr), &payload); err != nil {
+		return fmt.Errorf("failed to parse url.accessed payload: %w", err)
 	}
 
 	click := c.mapToClickEvent(payload)
 
 	if err := c.clickRepo.InsertClick(ctx, click); err != nil {
-		c.log.Error().Err(err).Str("url_code", click.URLCode).Msg("Failed to insert click")
-		return
+		return fmt.Errorf("failed to insert click: %w", err)
 	}
 
 	c.wsHub.Broadcast(click)
-	c.ack(ctx, msg.ID)
-
 	c.log.Debug().Str("url_code", click.URLCode).Msg("Processed click event")
+	return nil
 }
 
-func (c *Consumer) mapToClickEvent(payload map[string]interface{}) *domain.ClickEvent {
-	click := &domain.ClickEvent{
-		ClickedAt: time.Now().UTC(),
+func (c *Consumer) handleSystemEvent(ctx context.Context, eventType string, payloadStr string) error {
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(payloadStr), &payload); err != nil {
+		return fmt.Errorf("failed to parse %s payload: %w", eventType, err)
 	}
 
-	if v, ok := payload["short_code"].(string); ok {
-		click.URLCode = v
+	var userID *int64
+	if v, ok := payload["user_id"].(float64); ok {
+		uid := int64(v)
+		userID = &uid
 	}
-	if v, ok := payload["ip_address"].(string); ok {
-		click.IPHash = hashIP(v)
+
+	occurredAt := time.Now().UTC()
+	if tsStr, ok := payload["timestamp"].(string); ok {
+		if t, err := time.Parse(time.RFC3339, tsStr); err == nil {
+			occurredAt = t
+		}
 	}
-	if v, ok := payload["user_agent"].(string); ok {
-		click.Browser, click.OS, click.DeviceType = parseUserAgent(v)
+
+	if err := c.clickRepo.InsertSystemEvent(ctx, eventType, userID, payload, occurredAt); err != nil {
+		return fmt.Errorf("failed to insert system event %s: %w", eventType, err)
 	}
-	if v, ok := payload["referrer"].(string); ok {
-		click.ReferrerDomain = extractDomain(v)
+
+	c.log.Info().Str("type", eventType).Msg("Processed system event")
+	return nil
+}
+
+func (c *Consumer) mapToClickEvent(payload UrlAccessedPayload) *domain.ClickEvent {
+	click := &domain.ClickEvent{
+		URLCode:   payload.ShortCode,
+		ClickedAt: payload.Timestamp,
 	}
+
+	if click.ClickedAt.IsZero() {
+		click.ClickedAt = time.Now().UTC()
+	}
+
+	click.IPHash = hashIP(payload.IPAddress)
+	click.Browser, click.OS, click.DeviceType = parseUserAgent(payload.UserAgent)
+	click.ReferrerDomain = extractDomain(payload.Referrer)
 
 	return click
 }
 
 func (c *Consumer) ack(ctx context.Context, messageID string) {
-	c.redis.XAck(ctx, streamName, consumerGroup, messageID)
+	if err := c.redis.XAck(ctx, streamName, consumerGroup, messageID).Err(); err != nil {
+		c.log.Error().Err(err).Str("id", messageID).Msg("Failed to ACK message")
+	}
 }
 
 func hashIP(ip string) string {
+	if ip == "" {
+		return ""
+	}
 	return fmt.Sprintf("%x", ip)[:16]
 }
 
 func parseUserAgent(ua string) (browser, os, deviceType string) {
-	return "Unknown", "Unknown", "desktop"
+	browser = "Unknown"
+	os = "Unknown"
+	deviceType = "desktop"
+
+	if ua == "" {
+		return
+	}
+
+	switch {
+	case contains(ua, "Windows"):
+		os = "Windows"
+	case contains(ua, "Macintosh", "Mac OS X"):
+		os = "MacOS"
+	case contains(ua, "Android"):
+		os = "Android"
+		deviceType = "mobile"
+	case contains(ua, "iPhone", "iPad"):
+		os = "iOS"
+		deviceType = "mobile"
+	case contains(ua, "Linux"):
+		os = "Linux"
+	}
+
+	switch {
+	case contains(ua, "Chrome") && !contains(ua, "Edg", "OPR"):
+		browser = "Chrome"
+	case contains(ua, "Firefox"):
+		browser = "Firefox"
+	case contains(ua, "Safari") && !contains(ua, "Chrome"):
+		browser = "Safari"
+	case contains(ua, "Edg"):
+		browser = "Edge"
+	case contains(ua, "OPR", "Opera"):
+		browser = "Opera"
+	}
+
+	return
+}
+
+func contains(s string, subs ...string) bool {
+	lower := strings.ToLower(s)
+	for _, sub := range subs {
+		if strings.Contains(lower, strings.ToLower(sub)) {
+			return true
+		}
+	}
+	return false
 }
 
 func extractDomain(referrer string) string {
 	if referrer == "" {
 		return ""
 	}
-	return referrer
+	u, err := url.Parse(referrer)
+	if err != nil {
+		return ""
+	}
+	return u.Host
 }
 
 func NewRedisClient(redisURL string) (*redis.Client, error) {

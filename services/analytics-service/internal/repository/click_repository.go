@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -32,6 +33,20 @@ func (r *ClickRepository) InsertClick(ctx context.Context, click *domain.ClickEv
 		click.OS,
 		click.ReferrerDomain,
 	)
+	return err
+}
+
+func (r *ClickRepository) InsertSystemEvent(ctx context.Context, eventType string, userID *int64, data interface{}, occurredAt time.Time) error {
+	dataJSON, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+
+	query := `
+		INSERT INTO system_events (event_type, user_id, data, occurred_at)
+		VALUES ($1, $2, $3, $4)
+	`
+	_, err = r.pool.Exec(ctx, query, eventType, userID, dataJSON, occurredAt)
 	return err
 }
 

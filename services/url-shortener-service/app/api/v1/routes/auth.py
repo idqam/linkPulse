@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 import logging
 
@@ -47,13 +47,14 @@ async def register(payload: UserRegisterRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(payload: UserLoginRequest, db: Session = Depends(get_db)):
+async def login(payload: UserLoginRequest, request: Request, db: Session = Depends(get_db)):
     user_repo = UserRepository(db)
     auth_service = AuthService(user_repo)
 
     result = await auth_service.login(
         email=payload.email,
         password=payload.password,
+        ip_address=request.client.host if request.client else None,
     )
 
     if not result:

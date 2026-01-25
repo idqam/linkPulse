@@ -1,0 +1,10 @@
+.git
+.github
+.vscode
+vendor
+bin
+*.log
+docker-compose.yml
+Dockerfile
+README.md
+migrations

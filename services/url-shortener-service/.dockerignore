@@ -1,0 +1,14 @@
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.venv
+.env
+.git
+.github
+.vscode
+tests
+README.md
+Dockerfile
+uv.lock
+pyproject.toml

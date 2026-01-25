@@ -173,7 +173,7 @@ async def delete_short_url(
         )
 
     await service.invalidate_cache(short_code)
-    service.delete_short_url(short_url)
+    await service.delete_short_url(short_url)
 
     return {"message": "Short URL deleted successfully"}
 
@@ -201,7 +201,7 @@ async def disable_short_url(
         )
 
     await service.invalidate_cache(short_code)
-    service.disable_short_url(short_url)
+    await service.disable_short_url(short_url)
 
     return {"message": "Short URL disabled successfully"}
 
@@ -228,6 +228,6 @@ async def enable_short_url(
             detail="You do not have permission to enable this URL"
         )
 
-    service.enable_short_url(short_url)
+    await service.enable_short_url(short_url)
 
     return {"message": "Short URL enabled successfully"}

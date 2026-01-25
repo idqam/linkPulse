@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Optional
 
 from app.models.url_models import User
@@ -13,6 +14,9 @@ from app.core.security import (
     decode_token,
     revoke_all_user_tokens,
 )
+from app.events.publisher import event_publisher
+from app.events.schemas import UserRegisteredEvent, UserLoggedInEvent
+from app.events.constants import EVENT_USER_REGISTERED, EVENT_USER_LOGGED_IN
 
 
 class AuthService:
@@ -27,9 +31,19 @@ class AuthService:
             email=email,
             password_hash=hash_password(password),
         )
-        return self.user_repo.create(user)
+        user = self.user_repo.create(user)
 
-    async def login(self, email: str, password: str) -> Optional[dict]:
+        event = UserRegisteredEvent(
+            user_id=user.id,
+            email=user.email,
+            timestamp=datetime.now(timezone.utc),
+        )
+        import asyncio
+        asyncio.create_task(event_publisher.publish(EVENT_USER_REGISTERED, event))
+
+        return user
+
+    async def login(self, email: str, password: str, ip_address: Optional[str] = None) -> Optional[dict]:
         user = self.user_repo.get_by_email(email)
         if not user:
             return None
@@ -47,6 +61,14 @@ class AuthService:
         )
         refresh_token, jti = create_refresh_token(user.id)
         await store_refresh_token(user.id, jti)
+
+        event = UserLoggedInEvent(
+            user_id=user.id,
+            ip_address=ip_address,
+            timestamp=datetime.now(timezone.utc),
+        )
+        import asyncio
+        asyncio.create_task(event_publisher.publish(EVENT_USER_LOGGED_IN, event))
 
         return {
             "access_token": access_token,
