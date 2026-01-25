@@ -1,7 +1,7 @@
 [project]
 name = "app"
 version = "0.1.0"
-description = "Add your description here"
+description = "LinkPulse URL Shortener Service"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -10,8 +10,14 @@ dependencies = [
     "fastapi[standard]>=0.128.0",
     "psycopg2-binary>=2.9.11",
     "pydantic>=2.12.5",
+    "pydantic-settings>=2.0.0",
     "python-dotenv>=1.2.1",
+    "redis>=7.1.0",
     "sqlalchemy>=2.0.45",
     "uvicorn>=0.40.0",
     "validators>=0.35.0",
+    "passlib[bcrypt]>=1.7.4",
+    "python-jose[cryptography]>=3.3.0",
+    "bcrypt>=4.0.0",
+    "email-validator>=2.0.0",
 ]

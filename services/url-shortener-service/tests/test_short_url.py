@@ -11,7 +11,7 @@ def test_create_short_url():
     
     payload = {
         "original_url": "https://www.example.com/very/long/url/that/needs/shortening",
-        "custom_alias": None,  # Leave as None for auto-generated code
+        "custom_alias": None,
         "expires_at": None,
         "redirect_type": 302
     }
@@ -116,17 +116,16 @@ def test_redirect():
     }
     
     try:
-        # 1. Create Short URL
+
         create_response = httpx.post(f"{BASE_URL}/short-urls", json=create_payload, timeout=10.0)
-        if create_response.status_code not in [201, 400]: # 400 is ok if it already exists from prev run
+        if create_response.status_code not in [201, 400]:
              pass
 
-        # 2. Perform Redirect (Root URL)
-        # We need to hit the ROOT url, not /api/v1
+
         ROOT_URL = "http://localhost:8000" 
         short_code = "py-redirect"
         
-        # follow_redirects=False allows us to see the 301/302
+
         response = httpx.get(f"{ROOT_URL}/{short_code}", follow_redirects=False, timeout=10.0)
         
         print(f"\nRedirect Test:")
@@ -138,14 +137,12 @@ def test_redirect():
         else:
             print("✗ Redirect failed")
             
-        # 3. Verify Click Count
-        # Fetch the details from the API to check click_count
+
         api_response = httpx.get(f"{BASE_URL}/short-urls/{short_code}", timeout=10.0)
         if api_response.status_code == 200:
             data = api_response.json()
-            initial_count = 0 # Assuming 0 start
-            # If the test ran before, it might be higher.
-            # But we just want to see it exists basically.
+            initial_count = 0
+
             print(f"Click Count: {data.get('click_count')}")
             if data.get('click_count') >= 1:
                  print("✓ Click count incremented!")

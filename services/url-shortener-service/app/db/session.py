@@ -4,7 +4,7 @@ from typing import Generator
 
 from app.core.settings import settings
 
-# Convert async URL to sync if needed
+
 DATABASE_URL = settings.DATABASE_URL
 if DATABASE_URL.startswith("postgresql+asyncpg://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
