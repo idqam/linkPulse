@@ -1,0 +1,14 @@
+{
+  "python-envs.pythonProjects": [],
+  "python.analysis.extraPaths": [
+    "./services/url-shortener-service/app/utils",
+    "./services/url-shortener-service/app/models",
+    "./services/url-shortener-service/app/repositories",
+    "./services/url-shortener-service/app/services",
+    "./services/url-shortener-service/app/core",
+    "./services/url-shortener-service/app/db",
+    "./services/url-shortener-service/app/models/url_",
+    "./services/url-shortener-service/app/models/url_"
+  ],
+  "python-envs.defaultEnvManager": "ms-python.python:system"
+}

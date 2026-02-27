@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # Python Service: URL Management & Redirection
+  url-shortener:
+    build:
+      context: ./services/url-shortener-service
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://linkpulse:linkpulse@db:5432/linkpulse
+      - REDIS_URL=redis://redis:6379/0
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-super-secret-key}
+    depends_on:
+      - db
+      - redis
+    networks:
+      - linkpulse-network
+
+  # Go Service: Real-time Analytics
+  analytics-service:
+    build:
+      context: ./services/analytics-service
+    ports:
+      - "8081:8081"
+    environment:
+      - DATABASE_URL=postgresql://linkpulse:linkpulse@db:5432/linkpulse
+      - REDIS_URL=redis
+      - SERVER_PORT=8081
+    depends_on:
+      - db
+      - redis
+    networks:
+      - linkpulse-network
+
+  # TimescaleDB: Time-Series Database
+  db:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      - POSTGRES_USER=linkpulse
+      - POSTGRES_PASSWORD=linkpulse
+      - POSTGRES_DB=linkpulse
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - linkpulse-network
+
+  # Redis: Caching & Streaming
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - linkpulse-network
+
+networks:
+  linkpulse-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
